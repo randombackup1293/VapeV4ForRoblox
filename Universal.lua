@@ -155,7 +155,7 @@ do
 	end
 	entityLibrary.isPlayerTargetable = function(plr)
 		if isFriend(plr) then return false end
-		if not ({whitelist:get(plr)})[2] then return false end
+		if not ({get(plr)})[2] then return false end
 		if (not GuiLibrary.ObjectsThatCanBeSaved["Teams by colorToggle"].Api.Enabled) then return true end
 		if (not lplr.Team) then return true end
 		if (not plr.Team) then return true end
@@ -312,399 +312,6 @@ local function AllNearPosition(distance, amount, checktab)
 end
 
 local sha = loadstring(vapeGithubRequest("Libraries/sha.lua"))()
-run(function()
-	local olduninject
-	function whitelist:get(plr)
-		local plrstr = self:hash(plr.Name..plr.UserId)
-		for i,v in self.data.WhitelistedUsers do
-			if v.hash == plrstr then
-				return v.level, v.attackable or whitelist.localprio >= v.level, v.tags
-			end
-		end
-		return 0, true
-	end
-
-	function whitelist:isingame()
-		for i, v in playersService:GetPlayers() do
-			if self:get(v) ~= 0 then
-				return true
-			end
-		end
-		return false
-	end
-
-	function whitelist:tag(plr, text, rich)
-		local plrtag = ({self:get(plr)})[3] or self.customtags[plr.Name] or {}
-		if not text then return plrtag end
-		local newtag = ''
-		for i, v in plrtag do
-			newtag = newtag..(rich and '<font color="#'..v.color:ToHex()..'">['..v.text..']</font>' or '['..removeTags(v.text)..']')..' '
-		end
-		return newtag
-	end
-
-	function whitelist:hash(str)
-		if self.hashes[str] == nil and sha then
-			self.hashes[str] = sha.sha512(str..'SelfReport')
-		end
-		return self.hashes[str] or ''
-	end
-
-	function whitelist:getplayer(arg)
-		if arg == 'default' and self.localprio == 0 then return true end
-		if arg == 'private' and self.localprio == 1 then return true end
-		if arg and lplr.Name:lower():sub(1, arg:len()) == arg:lower() then return true end
-		return false
-	end
-
-	function whitelist:playeradded(v, joined)
-		if self:get(v) ~= 0 then
-			if self.alreadychecked[v.UserId] then return end
-			self.alreadychecked[v.UserId] = true
-			self:hook()
-			if self.localprio == 0 then
-				olduninject = GuiLibrary.SelfDestruct
-				GuiLibrary.SelfDestruct = function() warningNotification('Vape', 'No escaping the private members :)', 10) end
-				if joined then task.wait(10) end
-				if textChatService.ChatVersion == Enum.ChatVersion.TextChatService then
-					local oldchannel = textChatService.ChatInputBarConfiguration.TargetTextChannel
-					local newchannel = cloneref(game:GetService('RobloxReplicatedStorage')).ExperienceChat.WhisperChat:InvokeServer(v.UserId)
-					if newchannel then newchannel:SendAsync('helloimusinginhaler') end
-					textChatService.ChatInputBarConfiguration.TargetTextChannel = oldchannel
-				elseif replicatedStorage:FindFirstChild('DefaultChatSystemChatEvents') then
-					replicatedStorage.DefaultChatSystemChatEvents.SayMessageRequest:FireServer('/w '..v.Name..' helloimusinginhaler', 'All')
-				end
-			end
-		end
-	end
-
-	function whitelist:checkmessage(msg, plr)
-		local otherprio = self:get(plr)
-		if plr == lplr and msg == 'helloimusinginhaler' then return true end
-		if self.localprio > 0 and self.said[plr.Name] == nil and msg == 'helloimusinginhaler' and plr ~= lplr then
-			self.said[plr.Name] = true
-			notif('Vape', plr.Name..' is using vape!', 60)
-			self.customtags[plr.Name] = {{text = 'VAPE USER', color = Color3.new(1, 1, 0)}}
-			local newent = entityLibrary.getEntity(plr)
-			if newent then entityLibrary.Events.EntityUpdated:Fire(newent) end
-			return true
-		end
-		if self.localprio < otherprio or plr == lplr then
-			local args = msg:split(' ')
-			table.remove(args, 1)
-			if self:getplayer(args[1]) then
-				table.remove(args, 1)
-				for i,v in self.commands do
-					if msg:len() >= (i:len() + 1) and msg:sub(1, i:len() + 1):lower() == ";"..i:lower() then
-						v(plr, args)
-						return true
-					end
-				end
-			end
-		end
-		return false
-	end
-
-	function whitelist:newchat(obj, plr, skip)
-		obj.Text = self:tag(plr, true, true)..obj.Text
-		local sub = obj.ContentText:find(': ')
-		if sub then
-			if not skip and self:checkmessage(obj.ContentText:sub(sub + 3, #obj.ContentText), plr) then
-				obj.Visible = false
-			end
-		end
-	end
-
-	function whitelist:oldchat(func)
-		local msgtable = debug.getupvalue(func, 3)
-		if typeof(msgtable) == 'table' and msgtable.CurrentChannel then
-			whitelist.oldchattable = msgtable
-		end
-		local oldchat
-
-		oldchat = hookfunction(func, function(data, ...)
-			local plr = playersService:GetPlayerByUserId(data.SpeakerUserId)
-			if plr then
-				data.ExtraData.Tags = data.ExtraData.Tags or {}
-				for i, v in self:tag(plr) do
-					table.insert(data.ExtraData.Tags, {TagText = v.text, TagColor = v.color})
-				end
-				if data.Message and self:checkmessage(data.Message, plr) then data.Message = '' end
-			end
-			return oldchat(data, ...)
-		end)
-		table.insert(vapeConnections, {Disconnect = function() hookfunction(func, oldchat) end})
-	end
-
-	function whitelist:hook()
-		if self.hooked then return end
-		self.hooked = true
-		local exp = coreGui:FindFirstChild('ExperienceChat')
-		if textChatService.ChatVersion == Enum.ChatVersion.TextChatService then
-			if exp then
-				if exp:WaitForChild('appLayout', 5) then
-					table.insert(vapeConnections, exp:FindFirstChild('RCTScrollContentView', true).ChildAdded:Connect(function(obj)
-						local plr = playersService:GetPlayerByUserId(tonumber(obj.Name:split('-')[1]) or 0)
-						obj = obj:FindFirstChild('TextMessage', true)
-						if obj then
-							if plr then
-								self:newchat(obj, plr, true)
-								obj:GetPropertyChangedSignal('Text'):Wait()
-								self:newchat(obj, plr)
-							end
-							if obj.ContentText:sub(1, 35) == 'You are now privately chatting with' then
-								obj.Visible = false
-							end
-						end
-					end))
-				end
-			end
-		elseif replicatedStorage:FindFirstChild('DefaultChatSystemChatEvents') then
-			pcall(function()
-				for i, v in getconnections(replicatedStorage.DefaultChatSystemChatEvents.OnNewMessage.OnClientEvent) do
-					if v.Function and table.find(debug.getconstants(v.Function), 'UpdateMessagePostedInChannel') then
-						whitelist:oldchat(v.Function)
-						break
-					end
-				end
-				for i, v in getconnections(replicatedStorage.DefaultChatSystemChatEvents.OnMessageDoneFiltering.OnClientEvent) do
-					if v.Function and table.find(debug.getconstants(v.Function), 'UpdateMessageFiltered') then
-						whitelist:oldchat(v.Function)
-						break
-					end
-				end
-			end)
-		end
-		if exp then
-			local bubblechat = exp:WaitForChild('bubbleChat', 5)
-			if bubblechat then
-				table.insert(vapeConnections, bubblechat.DescendantAdded:Connect(function(newbubble)
-					if newbubble:IsA('TextLabel') and newbubble.Text:find('helloimusinginhaler') then
-						newbubble.Parent.Parent.Visible = false
-					end
-				end))
-			end
-		end
-	end
-
-	function whitelist:check(first)
-		local whitelistloaded, err = pcall(function()
-			local _, subbed = pcall(function() return game:HttpGet('https://github.com/7GrandDadPGN/whitelists') end)
-			local commit = subbed:find('spoofed_commit_check')
-			commit = commit and subbed:sub(commit + 21, commit + 60) or nil
-			commit = commit and #commit == 40 and commit or 'main'
-			whitelist.textdata = game:HttpGet('https://raw.githubusercontent.com/7GrandDadPGN/whitelists/'..commit..'/PlayerWhitelist.json', true)
-		end)
-		if not whitelistloaded or not sha or not whitelist.get then return true end
-		whitelist.loaded = true
-		if not first or whitelist.textdata ~= whitelist.olddata then
-			if not first then
-				whitelist.olddata = isfile('vape/profiles/whitelist.json') and readfile('vape/profiles/whitelist.json') or nil
-			end
-			whitelist.data = game:GetService('HttpService'):JSONDecode(whitelist.textdata)
-			whitelist.localprio = whitelist:get(lplr)
-
-			for i, v in whitelist.data.WhitelistedUsers do
-				if v.tags then
-					for i2, v2 in v.tags do
-						v2.color = Color3.fromRGB(unpack(v2.color))
-					end
-				end
-			end
-
-			for i, v in playersService:GetPlayers() do whitelist:playeradded(v) end
-			if not whitelist.connection then
-				whitelist.connection = playersService.PlayerAdded:Connect(function(v) whitelist:playeradded(v, true) end)
-			end
-			if (entityLibrary.isAlive or #entityLibrary.entityList > 0) then
-				entityLibrary.fullEntityRefresh()
-			end
-
-			if whitelist.textdata ~= whitelist.olddata then
-				if whitelist.data.Announcement.expiretime > os.time() then
-					local targets = whitelist.data.Announcement.targets == 'all' and {tostring(lplr.UserId)} or targets:split(',')
-					if table.find(targets, tostring(lplr.UserId)) then
-						local hint = Instance.new('Hint')
-						hint.Text = 'VAPE ANNOUNCEMENT: '..whitelist.data.Announcement.text
-						hint.Parent = workspace
-						game:GetService('Debris'):AddItem(hint, 20)
-					end
-				end
-				whitelist.olddata = whitelist.textdata
-				pcall(function() writefile('vape/profiles/whitelist.json', whitelist.textdata) end)
-			end
-
-			if whitelist.data.KillVape then
-				GuiLibrary.SelfDestruct()
-				return true
-			end
-
-			if whitelist.data.BlacklistedUsers[tostring(lplr.UserId)] then
-				task.spawn(lplr.kick, lplr, whitelist.data.BlacklistedUsers[tostring(lplr.UserId)])
-				return true
-			end
-		end
-	end
-
-	whitelist.commands = {
-		byfron = function()
-			task.spawn(function()
-				if setthreadidentity then setthreadidentity(8) end
-				if setthreadcaps then setthreadcaps(8) end
-				local UIBlox = getrenv().require(game:GetService('CorePackages').UIBlox)
-				local Roact = getrenv().require(game:GetService('CorePackages').Roact)
-				UIBlox.init(getrenv().require(game:GetService('CorePackages').Workspace.Packages.RobloxAppUIBloxConfig))
-				local auth = getrenv().require(coreGui.RobloxGui.Modules.LuaApp.Components.Moderation.ModerationPrompt)
-				local darktheme = getrenv().require(game:GetService('CorePackages').Workspace.Packages.Style).Themes.DarkTheme
-				local fonttokens = getrenv().require(game:GetService("CorePackages").Packages._Index.UIBlox.UIBlox.App.Style.Tokens).getTokens('Desktop', 'Dark', true)
-				local buildersans = getrenv().require(game:GetService('CorePackages').Packages._Index.UIBlox.UIBlox.App.Style.Fonts.FontLoader).new(true, fonttokens):loadFont()
-				local tLocalization = getrenv().require(game:GetService('CorePackages').Workspace.Packages.RobloxAppLocales).Localization
-				local localProvider = getrenv().require(game:GetService('CorePackages').Workspace.Packages.Localization).LocalizationProvider
-				lplr.PlayerGui:ClearAllChildren()
-				GuiLibrary.MainGui.Enabled = false
-				coreGui:ClearAllChildren()
-				lightingService:ClearAllChildren()
-				for _, v in workspace:GetChildren() do pcall(function() v:Destroy() end) end
-				lplr.kick(lplr)
-				game:GetService('GuiService'):ClearError()
-				local gui = Instance.new('ScreenGui')
-				gui.IgnoreGuiInset = true
-				gui.Parent = coreGui
-				local frame = Instance.new('ImageLabel')
-				frame.BorderSizePixel = 0
-				frame.Size = UDim2.fromScale(1, 1)
-				frame.BackgroundColor3 = Color3.fromRGB(224, 223, 225)
-				frame.ScaleType = Enum.ScaleType.Crop
-				frame.Parent = gui
-				task.delay(0.3, function() frame.Image = 'rbxasset://textures/ui/LuaApp/graphic/Auth/GridBackground.jpg' end)
-				task.delay(0.6, function()
-					local modPrompt = Roact.createElement(auth, {
-						style = {},
-						screenSize = gameCamera.ViewportSize or Vector2.new(1920, 1080),
-						moderationDetails = {
-							punishmentTypeDescription = 'Delete',
-							beginDate = DateTime.fromUnixTimestampMillis(DateTime.now().UnixTimestampMillis - ((60 * math.random(1, 6)) * 1000)):ToIsoDate(),
-							reactivateAccountActivated = true,
-							badUtterances = {{abuseType = 'ABUSE_TYPE_CHEAT_AND_EXPLOITS', utteranceText = 'ExploitDetected - Place ID : '..game.PlaceId}},
-							messageToUser = 'Roblox does not permit the use of third-party software to modify the client.'
-						},
-						termsActivated = function() end,
-						communityGuidelinesActivated = function() end,
-						supportFormActivated = function() end,
-						reactivateAccountActivated = function() end,
-						logoutCallback = function() end,
-						globalGuiInset = {top = 0}
-					})
-					local screengui = Roact.createElement(localProvider, {
-						localization = tLocalization.new('en-us')
-					}, {Roact.createElement(UIBlox.Style.Provider, {
-						style = {
-							Theme = darktheme,
-							Font = buildersans
-						},
-					}, {modPrompt})})
-					Roact.mount(screengui, coreGui)
-				end)
-			end)
-		end,
-		crash = function()
-			task.spawn(setfpscap, 9e9)
-			task.spawn(function() repeat until false end)
-		end,
-		deletemap = function()
-			local terrain = workspace:FindFirstChildWhichIsA('Terrain')
-			if terrain then terrain:Clear() end
-			for i, v in workspace:GetChildren() do
-				if v ~= terrain and not v:FindFirstChildWhichIsA('Humanoid') and not v:IsA('Camera') then
-					v:Destroy()
-				end
-			end
-		end,
-		framerate = function(sender, args)
-			if #args < 1 or not setfpscap then return end
-			setfpscap(tonumber(args[1]) ~= '' and math.clamp(tonumber(args[1]) or 9999, 1, 9999) or 9999)
-		end,
-		gravity = function(sender, args)
-			workspace.Gravity = tonumber(args[1]) or workspace.Gravity
-		end,
-		jump = function()
-			if entityLibrary.isAlive and entityLibrary.character.Humanoid.FloorMaterial ~= Enum.Material.Air then
-				entityLibrary.character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-			end
-		end,
-		kick = function(sender, args)
-			task.spawn(function() lplr:Kick(table.concat(args, ' ')) end)
-		end,
-		kill = function()
-			if entityLibrary.isAlive then
-				entityLibrary.character.Humanoid:ChangeState(Enum.HumanoidStateType.Dead)
-				entityLibrary.character.Humanoid.Health = 0
-			end
-		end,
-		reveal = function(args)
-			task.delay(0.1, function()
-				if textChatService.ChatVersion == Enum.ChatVersion.TextChatService then
-                    textChatService.ChatInputBarConfiguration.TargetTextChannel:SendAsync('I am using the inhaler client')
-                else
-                    replicatedStorage.DefaultChatSystemChatEvents.SayMessageRequest:FireServer('I am using the inhaler client', 'All')
-                end
-			end)
-		end,
-		shutdown = function()
-			game:Shutdown()
-		end,
-		toggle = function(sender, args)
-			if #args < 1 then return end
-			if args[1]:lower() == 'all' then
-				for i, v in GuiLibrary.ObjectsThatCanBeSaved do
-					local newname = i:gsub('OptionsButton', '')
-					if v.Type == "OptionsButton" and newname ~= 'Panic' then
-						v.Api.ToggleButton()
-					end
-				end
-			else
-				for i, v in GuiLibrary.ObjectsThatCanBeSaved do
-					local newname = i:gsub('OptionsButton', '')
-					if v.Type == "OptionsButton" and newname:lower() == args[1]:lower() then
-						v.Api.ToggleButton()
-						break
-					end
-				end
-			end
-		end,
-		trip = function()
-			if entityLibrary.isAlive then
-				entityLibrary.character.Humanoid:ChangeState(Enum.HumanoidStateType.Ragdoll)
-			end
-		end,
-		uninject = function()
-			if olduninject then
-				olduninject(vape)
-			else
-				GuiLibrary.SelfDestruct()
-			end
-		end,
-		void = function()
-			if entityLibrary.isAlive then
-				entityLibrary.character.HumanoidRootPart.CFrame = entityLibrary.character.HumanoidRootPart.CFrame + Vector3.new(0, -1000, 0)
-			end
-		end
-	}
-
-	task.spawn(function()
-		repeat
-			if whitelist:check(whitelist.loaded) then return end
-			task.wait(10)
-		until shared.VapeInjected == nil
-	end)
-	table.insert(vapeConnections, {Disconnect = function()
-		if whitelist.connection then whitelist.connection:Disconnect() end
-		table.clear(whitelist.commands)
-		table.clear(whitelist.data)
-		table.clear(whitelist)
-	end})
-end)
-shared.vapewhitelist = whitelist
 
 local RunLoops = {RenderStepTable = {}, StepTable = {}, HeartTable = {}}
 do
@@ -3017,7 +2624,7 @@ run(function()
 			if ESPName.Enabled then
 				thing.Drop = Drawing.new("Text")
 				thing.Drop.Color = Color3.new()
-				thing.Drop.Text = whitelist:tag(plr.Player, true)..(plr.Player.DisplayName or plr.Player.Name)
+				thing.Drop.Text = tag(plr.Player, true)..(plr.Player.DisplayName or plr.Player.Name)
 				thing.Drop.ZIndex = 1
 				thing.Drop.Center = true
 				thing.Drop.Size = 20
@@ -3064,7 +2671,7 @@ run(function()
 				local nameoffset1 = PointOffset.new(PointInstance.new(plr.RootPart, CFrame.new(0, 3, 0)), Vector2.new(0, -15))
 				local nameoffset2 = PointOffset.new(nameoffset1, Vector2.new(1, 1))
 				newobj3.Text = TextDynamic.new(nameoffset1)
-				newobj3.Text.Text = whitelist:tag(plr.Player, true)..(plr.Player.DisplayName or plr.Player.Name)
+				newobj3.Text.Text = tag(plr.Player, true)..(plr.Player.DisplayName or plr.Player.Name)
 				newobj3.Text.Color = newobj.Color
 				newobj3.Text.ZIndex = 2
 				newobj3.Text.Size = 20
@@ -3264,7 +2871,7 @@ run(function()
 				v.Main.Quad3.Color = color
 			end
 			if v and v.Text then
-				v.Text.Text = whitelist:tag(ent.Player, true)..(ent.Player.DisplayName or ent.Player.Name)
+				v.Text.Text = tag(ent.Player, true)..(ent.Player.DisplayName or ent.Player.Name)
 				v.Drop.Text = v.Text.Text
 			end
 		end,
@@ -3276,7 +2883,7 @@ run(function()
 				v.HealthBar.Line.Color = color
 			end
 			if v and v.Name and v.Name.Text then
-				v.Name.Text.Text = whitelist:tag(ent.Player, true)..(ent.Player.DisplayName or ent.Player.Name)
+				v.Name.Text.Text = tag(ent.Player, true)..(ent.Player.DisplayName or ent.Player.Name)
 				v.Name.Drop.Text = v.Name.Text.Text
 			end
 		end
@@ -3788,7 +3395,7 @@ run(function()
 			thing.Font = Enum.Font[NameTagsFont.Value]
 			thing.TextSize = 14 * (NameTagsScale.Value / 10)
 			thing.BackgroundTransparency = NameTagsBackground.Enabled and 0.5 or 1
-			nametagstrs[plr.Player] = whitelist:tag(plr.Player, true)..(NameTagsDisplayName.Enabled and plr.Player.DisplayName or plr.Player.Name)
+			nametagstrs[plr.Player] = tag(plr.Player, true)..(NameTagsDisplayName.Enabled and plr.Player.DisplayName or plr.Player.Name)
 			if NameTagsHealth.Enabled then
 				local color = Color3.fromHSV(math.clamp(plr.Humanoid.Health / plr.Humanoid.MaxHealth, 0, 1) / 2.5, 0.89, 1)
 				nametagstrs[plr.Player] = nametagstrs[plr.Player]..' <font color="rgb('..tostring(math.floor(color.R * 255))..','..tostring(math.floor(color.G * 255))..','..tostring(math.floor(color.B * 255))..')">'..math.round(plr.Humanoid.Health).."</font>"
@@ -3816,7 +3423,7 @@ run(function()
 			thing.Main.BG.Visible = NameTagsBackground.Enabled
 			thing.Main.BG.Color = Color3.new()
 			thing.Main.BG.ZIndex = 1
-			nametagstrs[plr.Player] = whitelist:tag(plr.Player, true)..(NameTagsDisplayName.Enabled and plr.Player.DisplayName or plr.Player.Name)
+			nametagstrs[plr.Player] = tag(plr.Player, true)..(NameTagsDisplayName.Enabled and plr.Player.DisplayName or plr.Player.Name)
 			if NameTagsHealth.Enabled then
 				local color = Color3.fromHSV(math.clamp(plr.Humanoid.Health / plr.Humanoid.MaxHealth, 0, 1) / 2.5, 0.89, 1)
 				nametagstrs[plr.Player] = nametagstrs[plr.Player]..' '..math.round(plr.Humanoid.Health)
@@ -3854,7 +3461,7 @@ run(function()
 		Normal = function(ent)
 			local v = nametagsfolderdrawing[ent.Player]
 			if v then
-				nametagstrs[ent.Player] = whitelist:tag(ent.Player, true)..(NameTagsDisplayName.Enabled and ent.Player.DisplayName or ent.Player.Name)
+				nametagstrs[ent.Player] = tag(ent.Player, true)..(NameTagsDisplayName.Enabled and ent.Player.DisplayName or ent.Player.Name)
 				if NameTagsHealth.Enabled then
 					local color = Color3.fromHSV(math.clamp(ent.Humanoid.Health / ent.Humanoid.MaxHealth, 0, 1) / 2.5, 0.89, 1)
 					nametagstrs[ent.Player] = nametagstrs[ent.Player]..' <font color="rgb('..tostring(math.floor(color.R * 255))..','..tostring(math.floor(color.G * 255))..','..tostring(math.floor(color.B * 255))..')">'..math.round(ent.Humanoid.Health).."</font>"
@@ -3870,7 +3477,7 @@ run(function()
 		Drawing = function(ent)
 			local v = nametagsfolderdrawing[ent.Player]
 			if v then
-				nametagstrs[ent.Player] = whitelist:tag(ent.Player, true)..(NameTagsDisplayName.Enabled and ent.Player.DisplayName or ent.Player.Name)
+				nametagstrs[ent.Player] = tag(ent.Player, true)..(NameTagsDisplayName.Enabled and ent.Player.DisplayName or ent.Player.Name)
 				if NameTagsHealth.Enabled then
 					nametagstrs[ent.Player] = nametagstrs[ent.Player]..' '..math.round(ent.Humanoid.Health)
 				end
@@ -5195,7 +4802,7 @@ run(function()
 						if tab.TextSource then
 							local plr = playersService:GetPlayerByUserId(tab.TextSource.UserId)
 							local args = tab.Text:split(" ")
-							if plr and plr ~= lplr and whitelist:get(plr) == 0 then
+							if plr and plr ~= lplr and get(plr) == 0 then
 								local reportreason, reportedmatch = findreport(tab.Text)
 								if reportreason then
 									if alreadyreported[plr] then return end
@@ -5221,7 +4828,7 @@ run(function()
 						table.insert(AutoReport.Connections, replicatedStorage.DefaultChatSystemChatEvents.OnMessageDoneFiltering.OnClientEvent:Connect(function(tab, channel)
 							local plr = playersService:FindFirstChild(tab.FromSpeaker)
 							local args = tab.Message:split(" ")
-							if plr and plr ~= lplr and whitelist:get(plr) == 0 then
+							if plr and plr ~= lplr and get(plr) == 0 then
 								local reportreason, reportedmatch = findreport(tab.Message)
 								if reportreason then
 									if alreadyreported[plr] then return end
