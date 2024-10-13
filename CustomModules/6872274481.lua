@@ -1665,7 +1665,7 @@ do
 			end
 		until not vapeInjected
 	end)
-
+    end
 run(function()
 	local handsquare = Instance.new("ImageLabel")
 	handsquare.Size = UDim2.new(0, 26, 0, 27)
